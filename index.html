@@ -491,32 +491,17 @@ function sleep(ms) {
 }
 
 // ---- SerpApi call ----
-function searchSerpApi(query, apiKey) {
-  return new Promise((resolve, reject) => {
-    const callbackName = 'serpapi_cb_' + Date.now();
-    const script = document.createElement('script');
-    const params = new URLSearchParams({
-      api_key: apiKey,
-      engine: 'google',
-      q: query,
-      gl: 'jp',
-      hl: 'ja',
-      num: '10',
-      callback: callbackName
-    });
-    script.src = `https://serpapi.com/search.json?${params}`;
-    window[callbackName] = (data) => {
-      delete window[callbackName];
-      document.head.removeChild(script);
-      resolve(data);
-    };
-    script.onerror = () => {
-      delete window[callbackName];
-      document.head.removeChild(script);
-      reject(new Error('Failed to fetch'));
-    };
-    document.head.appendChild(script);
-  });
+async function searchSerpApi(query, apiKey) {
+  const url = `https://serpapi.com/search.json?api_key=${encodeURIComponent(apiKey)}&engine=google&q=${encodeURIComponent(query)}&gl=jp&hl=ja&num=10`;
+
+  const response = await fetch(url);
+
+  if (!response.ok) {
+    throw new Error(`HTTP error! status: ${response.status}`);
+  }
+
+  const data = await response.json();
+  return data;
 }
 
 // ---- Parse response ----
