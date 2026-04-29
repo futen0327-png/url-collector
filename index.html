@@ -522,7 +522,9 @@ function parseResponse(municipality, data) {
   }
 
   // ② local_results
-  const locals = data.local_results || [];
+  const locals = Array.isArray(data.local_results)
+    ? data.local_results
+    : (data.local_results?.places || []);
   locals.forEach(item => {
     results.push({
       municipality,
@@ -535,7 +537,9 @@ function parseResponse(municipality, data) {
   });
 
   // ③ organic_results
-  const organics = data.organic_results || [];
+  const organics = Array.isArray(data.organic_results)
+    ? data.organic_results
+    : [];
   organics.forEach(item => {
     results.push({
       municipality,
