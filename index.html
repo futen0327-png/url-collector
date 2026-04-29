@@ -362,12 +362,18 @@
           <th>施設名</th>
           <th>住所</th>
           <th>電話番号</th>
-          <th>URL</th>
+          <th>GoogleマップURL</th>
           <th>HP有無</th>
+          <th>HPのURL</th>
+          <th>評価</th>
+          <th>口コミ件数</th>
+          <th>緯度</th>
+          <th>経度</th>
+          <th>営業状態</th>
         </tr>
       </thead>
       <tbody id="resultBody">
-        <tr><td colspan="7" class="no-data">収集結果がここに表示されます</td></tr>
+        <tr><td colspan="13" class="no-data">収集結果がここに表示されます</td></tr>
       </tbody>
     </table>
   </div>
@@ -448,7 +454,10 @@ function addRow(entry) {
                  : '<span class="source-tag source-org">WEB</span>';
 
   const urlCell = entry.url
-    ? `<a href="${escHtml(entry.url)}" target="_blank" rel="noopener">${escHtml(truncate(entry.url, 50))}</a>`
+    ? `<a href="${escHtml(entry.url)}" target="_blank" rel="noopener">${escHtml(truncate(entry.url, 40))}</a>`
+    : "—";
+  const mapCell = entry.mapUrl
+    ? `<a href="${escHtml(entry.mapUrl)}" target="_blank" rel="noopener">地図</a>`
     : "—";
 
   tr.innerHTML = `
@@ -457,8 +466,14 @@ function addRow(entry) {
     <td>${escHtml(entry.facilityName)}${srcLabel}</td>
     <td>${escHtml(entry.address)}</td>
     <td>${escHtml(entry.phone)}</td>
-    <td class="td-url">${urlCell}</td>
+    <td class="td-url">${mapCell}</td>
     <td>${entry.url ? '<span class="badge-hp-yes">○</span>' : '<span class="badge-hp-no">×</span>'}</td>
+    <td class="td-url">${urlCell}</td>
+    <td>${escHtml(String(entry.rating ?? ""))}</td>
+    <td>${escHtml(String(entry.reviews ?? ""))}</td>
+    <td>${escHtml(String(entry.lat ?? ""))}</td>
+    <td>${escHtml(String(entry.lng ?? ""))}</td>
+    <td>${escHtml(entry.openState ?? "")}</td>
   `;
   tbody.appendChild(tr);
 
@@ -517,6 +532,12 @@ function parseResponse(municipality, data) {
       address: kg.address || "",
       phone: kg.phone || "",
       url: kg.website || "",
+      mapUrl: "",
+      rating: "",
+      reviews: "",
+      lat: "",
+      lng: "",
+      openState: "",
       source: "kg"
     });
   }
@@ -526,12 +547,20 @@ function parseResponse(municipality, data) {
     ? data.local_results
     : (data.local_results?.places || []);
   locals.forEach(item => {
+    const mapUrl = item.links?.directions
+      || (item.place_id ? `https://www.google.com/maps/place/?q=place_id:${item.place_id}` : "");
     results.push({
       municipality,
       facilityName: item.title || "",
       address: item.address || "",
       phone: item.phone || "",
-      url: (item.links && item.links.website) || "",
+      url: item.links?.website || "",
+      mapUrl,
+      rating: item.rating ?? "",
+      reviews: item.reviews ?? "",
+      lat: item.gps_coordinates?.latitude ?? "",
+      lng: item.gps_coordinates?.longitude ?? "",
+      openState: item.open_state || "",
       source: "local"
     });
   });
@@ -547,6 +576,12 @@ function parseResponse(municipality, data) {
       address: extractAddress(item.snippet || ""),
       phone: extractPhone(item.snippet || ""),
       url: item.link || "",
+      mapUrl: "",
+      rating: "",
+      reviews: "",
+      lat: "",
+      lng: "",
+      openState: "",
       source: "org"
     });
   });
@@ -572,7 +607,7 @@ async function collectData() {
   collectedData = [];
   document.getElementById("startBtn").disabled = true;
   document.getElementById("downloadBtn").disabled = true;
-  document.getElementById("resultBody").innerHTML = '<tr><td colspan="7" class="no-data">収集中…</td></tr>';
+  document.getElementById("resultBody").innerHTML = '<tr><td colspan="13" class="no-data">収集中…</td></tr>';
   document.getElementById("progressCard").style.display = "block";
   document.getElementById("resultCard").style.display = "block";
   document.getElementById("logArea").innerHTML = "";
@@ -602,6 +637,12 @@ async function collectData() {
           address: "",
           phone: "",
           url: "",
+          mapUrl: "",
+          rating: "",
+          reviews: "",
+          lat: "",
+          lng: "",
+          openState: "",
           source: "none"
         };
         collectedData.push(emptyEntry);
@@ -623,6 +664,12 @@ async function collectData() {
         address: "",
         phone: "",
         url: "",
+        mapUrl: "",
+        rating: "",
+        reviews: "",
+        lat: "",
+        lng: "",
+        openState: "",
         source: "err"
       };
       collectedData.push(errEntry);
@@ -648,15 +695,21 @@ async function collectData() {
 function downloadExcel() {
   if (collectedData.length === 0) { alert("ダウンロードするデータがありません"); return; }
 
-  const headers = ["No.", "市区町村", "施設名", "住所", "電話番号", "URL", "HP有無"];
+  const headers = ["No.", "市区町村", "施設名", "住所", "電話番号", "GoogleマップURL", "HP有無", "HPのURL", "評価", "口コミ件数", "緯度", "経度", "営業状態"];
   const rows = collectedData.map((row, i) => [
     i + 1,
     row.municipality || "",
     row.facilityName || "",
     row.address || "",
     row.phone || "",
+    row.mapUrl || "",
+    row.url ? "○" : "×",
     row.url || "",
-    row.url ? "○" : "×"
+    row.rating ?? "",
+    row.reviews ?? "",
+    row.lat ?? "",
+    row.lng ?? "",
+    row.openState || ""
   ]);
 
   const wsData = [headers, ...rows];
@@ -669,8 +722,14 @@ function downloadExcel() {
     { wch: 28 },  // 施設名
     { wch: 30 },  // 住所
     { wch: 16 },  // 電話番号
-    { wch: 45 },  // URL
-    { wch: 8 }    // HP有無
+    { wch: 45 },  // GoogleマップURL
+    { wch: 8 },   // HP有無
+    { wch: 45 },  // HPのURL
+    { wch: 8 },   // 評価
+    { wch: 10 },  // 口コミ件数
+    { wch: 12 },  // 緯度
+    { wch: 12 },  // 経度
+    { wch: 14 }   // 営業状態
   ];
 
   const wb = XLSX.utils.book_new();
@@ -685,7 +744,7 @@ function clearResults() {
   if (isRunning) return;
   if (!confirm("収集結果をすべてクリアしますか？")) return;
   collectedData = [];
-  document.getElementById("resultBody").innerHTML = '<tr><td colspan="7" class="no-data">収集結果がここに表示されます</td></tr>';
+  document.getElementById("resultBody").innerHTML = '<tr><td colspan="13" class="no-data">収集結果がここに表示されます</td></tr>';
   document.getElementById("downloadBtn").disabled = true;
   updateSummary();
 }
