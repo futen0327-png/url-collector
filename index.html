@@ -318,6 +318,10 @@
 <div class="card">
   <div class="card-title">検索条件</div>
   <div class="field-group">
+    <label for="prefecture">都道府県</label>
+    <input type="text" id="prefecture" placeholder="例：奈良県" />
+  </div>
+  <div class="field-group">
     <label for="muniList">市区町村リスト（1行1件）</label>
     <textarea id="muniList" placeholder="東大阪市&#10;八尾市&#10;大阪市平野区"></textarea>
   </div>
@@ -358,6 +362,7 @@
       <thead>
         <tr>
           <th>No.</th>
+          <th>都道府県</th>
           <th>市区町村</th>
           <th>施設名</th>
           <th>住所</th>
@@ -373,7 +378,7 @@
         </tr>
       </thead>
       <tbody id="resultBody">
-        <tr><td colspan="13" class="no-data">収集結果がここに表示されます</td></tr>
+        <tr><td colspan="14" class="no-data">収集結果がここに表示されます</td></tr>
       </tbody>
     </table>
   </div>
@@ -396,6 +401,10 @@ let isRunning = false;
   if (saved) {
     document.getElementById("apiKeyInput").value = saved;
     document.getElementById("savedBadge").style.display = "inline-block";
+  }
+  const savedPref = localStorage.getItem("sanpai_prefecture");
+  if (savedPref) {
+    document.getElementById("prefecture").value = savedPref;
   }
 })();
 
@@ -462,6 +471,7 @@ function addRow(entry) {
 
   tr.innerHTML = `
     <td>${escHtml(String(entry.no))}</td>
+    <td>${escHtml(entry.prefecture ?? "")}</td>
     <td>${escHtml(entry.municipality)}</td>
     <td>${escHtml(entry.facilityName)}${srcLabel}</td>
     <td>${escHtml(entry.address)}</td>
@@ -520,13 +530,14 @@ async function searchSerpApi(query, apiKey) {
 }
 
 // ---- Parse response ----
-function parseResponse(municipality, data) {
+function parseResponse(municipality, data, prefecture = "") {
   const results = [];
 
   // ① knowledge_graph
   const kg = data.knowledge_graph;
   if (kg && kg.title) {
     results.push({
+      prefecture,
       municipality,
       facilityName: kg.title || "",
       address: kg.address || "",
@@ -550,6 +561,7 @@ function parseResponse(municipality, data) {
     const mapUrl = item.links?.directions
       || (item.place_id ? `https://www.google.com/maps/place/?q=place_id:${item.place_id}` : "");
     results.push({
+      prefecture,
       municipality,
       facilityName: item.title || "",
       address: item.address || "",
@@ -571,6 +583,7 @@ function parseResponse(municipality, data) {
     : [];
   organics.forEach(item => {
     results.push({
+      prefecture,
       municipality,
       facilityName: item.title || "",
       address: extractAddress(item.snippet || ""),
@@ -600,6 +613,9 @@ async function collectData() {
   const munis = muniRaw.split("\n").map(s => s.trim()).filter(Boolean);
   if (munis.length === 0) { alert("市区町村リストを入力してください"); return; }
 
+  const prefecture = document.getElementById("prefecture").value.trim();
+  localStorage.setItem("sanpai_prefecture", prefecture);
+
   const template = document.getElementById("queryTemplate").value.trim() || "{市区町村} 産業廃棄物 中間処理場";
 
   // UI setup
@@ -607,7 +623,7 @@ async function collectData() {
   collectedData = [];
   document.getElementById("startBtn").disabled = true;
   document.getElementById("downloadBtn").disabled = true;
-  document.getElementById("resultBody").innerHTML = '<tr><td colspan="13" class="no-data">収集中…</td></tr>';
+  document.getElementById("resultBody").innerHTML = '<tr><td colspan="14" class="no-data">収集中…</td></tr>';
   document.getElementById("progressCard").style.display = "block";
   document.getElementById("resultCard").style.display = "block";
   document.getElementById("logArea").innerHTML = "";
@@ -621,17 +637,19 @@ async function collectData() {
     setProgress(i, munis.length, muni);
     log(`[${i + 1}/${munis.length}] ${muni} 検索中…`, "info");
 
-    const query = template.replace(/\{市区町村\}/g, muni);
+    const prefStr = prefecture ? prefecture + " " : "";
+    const query = template.replace(/\{市区町村\}/g, prefStr + muni);
 
     try {
       const data = await searchSerpApi(query, apiKey);
-      const entries = parseResponse(muni, data);
+      const entries = parseResponse(muni, data, prefecture);
 
       if (entries.length === 0) {
         log(`  → 結果なし`, "warn");
         // 結果なしでも1行追加（空レコード）
         const emptyEntry = {
           no: collectedData.length + 1,
+          prefecture: prefecture,
           municipality: muni,
           facilityName: "",
           address: "",
@@ -659,6 +677,7 @@ async function collectData() {
       log(`  → エラー: ${err.message}`, "err");
       const errEntry = {
         no: collectedData.length + 1,
+        prefecture: prefecture,
         municipality: muni,
         facilityName: `[エラー] ${err.message}`,
         address: "",
@@ -695,9 +714,10 @@ async function collectData() {
 function downloadExcel() {
   if (collectedData.length === 0) { alert("ダウンロードするデータがありません"); return; }
 
-  const headers = ["No.", "市区町村", "施設名", "住所", "電話番号", "GoogleマップURL", "HP有無", "HPのURL", "評価", "口コミ件数", "緯度", "経度", "営業状態"];
+  const headers = ["No.", "都道府県", "市区町村", "施設名", "住所", "電話番号", "GoogleマップURL", "HP有無", "HPのURL", "評価", "口コミ件数", "緯度", "経度", "営業状態"];
   const rows = collectedData.map((row, i) => [
     i + 1,
+    row.prefecture || "",
     row.municipality || "",
     row.facilityName || "",
     row.address || "",
@@ -718,6 +738,7 @@ function downloadExcel() {
   // 列幅設定
   ws["!cols"] = [
     { wch: 6 },   // No.
+    { wch: 10 },  // 都道府県
     { wch: 14 },  // 市区町村
     { wch: 28 },  // 施設名
     { wch: 30 },  // 住所
@@ -744,7 +765,7 @@ function clearResults() {
   if (isRunning) return;
   if (!confirm("収集結果をすべてクリアしますか？")) return;
   collectedData = [];
-  document.getElementById("resultBody").innerHTML = '<tr><td colspan="13" class="no-data">収集結果がここに表示されます</td></tr>';
+  document.getElementById("resultBody").innerHTML = '<tr><td colspan="14" class="no-data">収集結果がここに表示されます</td></tr>';
   document.getElementById("downloadBtn").disabled = true;
   updateSummary();
 }
