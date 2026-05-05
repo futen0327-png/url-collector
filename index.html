@@ -598,29 +598,41 @@ function parseResponse(municipality, data, prefecture = "") {
     }
   }
 
-  // ── ③ organic_results をフォールバック②として追加 ──────────
-  // local_results も knowledge_graph も0件のときのみ使用
-  if (results.length === 0) {
-    const organics = Array.isArray(data.organic_results)
-      ? data.organic_results
-      : [];
-    organics.forEach(item => {
-      results.push({
-        prefecture,
-        municipality,
-        facilityName: item.title || "",
-        address:      extractAddress(item.snippet || ""),
-        phone:        extractPhone(item.snippet || ""),
-        url:          item.link || "",
-        mapUrl:       "",
-        rating:       "",
-        reviews:      "",
-        lat:          "",
-        lng:          "",
-        openState:    "",
-        source:       "org"
-      });
+  // ── ③ organic_results を常に補完として追加 ──────────────────
+  // local / kg の件数に関わらず、重複しないものを追加する
+  const usedPhones = new Set(results.map(r => r.phone).filter(Boolean));
+  const usedDomains = new Set(results.map(r => {
+    try { return new URL(r.url || '').hostname; } catch { return null; }
+  }).filter(Boolean));
+
+  const organics = Array.isArray(data.organic_results) ? data.organic_results : [];
+  for (const item of organics) {
+    let orgDomain = null;
+    try { orgDomain = new URL(item.link || '').hostname; } catch {}
+    const orgPhone = extractPhone(item.snippet || "");
+
+    // 電話番号またはドメインが既存と重複する場合はスキップ
+    if (orgPhone && usedPhones.has(orgPhone)) continue;
+    if (orgDomain && usedDomains.has(orgDomain)) continue;
+
+    results.push({
+      prefecture,
+      municipality,
+      facilityName: item.title || "",
+      address:      extractAddress(item.snippet || ""),
+      phone:        orgPhone,
+      url:          item.link || "",
+      mapUrl:       "",
+      rating:       "",
+      reviews:      "",
+      lat:          "",
+      lng:          "",
+      openState:    "",
+      source:       "org"
     });
+
+    if (orgDomain) usedDomains.add(orgDomain);
+    if (orgPhone) usedPhones.add(orgPhone);
   }
 
   return results;
