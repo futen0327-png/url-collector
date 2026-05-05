@@ -559,6 +559,7 @@ function parseResponse(municipality, data, prefecture = "") {
     const mapUrl = item.links?.directions
       || (item.place_id ? `https://www.google.com/maps/place/?q=place_id:${item.place_id}` : "");
     results.push({
+      placeId:      item.place_id || "",
       prefecture,
       municipality,
       facilityName: item.title || "",
@@ -571,7 +572,8 @@ function parseResponse(municipality, data, prefecture = "") {
       lat:          item.gps_coordinates?.latitude ?? "",
       lng:          item.gps_coordinates?.longitude ?? "",
       openState:    item.open_state || "",
-      source:       "local"
+      source:       "local",
+      sourceType:   "MAP"
     });
   });
 
@@ -581,6 +583,7 @@ function parseResponse(municipality, data, prefecture = "") {
     const kg = data.knowledge_graph;
     if (kg && kg.title) {
       results.push({
+        placeId:      "",
         prefecture,
         municipality,
         facilityName: kg.title || "",
@@ -593,7 +596,8 @@ function parseResponse(municipality, data, prefecture = "") {
         lat:          "",
         lng:          "",
         openState:    "",
-        source:       "kg"
+        source:       "kg",
+        sourceType:   "MAP"
       });
     }
   }
@@ -616,6 +620,7 @@ function parseResponse(municipality, data, prefecture = "") {
     if (orgDomain && usedDomains.has(orgDomain)) continue;
 
     results.push({
+      placeId:      "",
       prefecture,
       municipality,
       facilityName: item.title || "",
@@ -628,7 +633,8 @@ function parseResponse(municipality, data, prefecture = "") {
       lat:          "",
       lng:          "",
       openState:    "",
-      source:       "org"
+      source:       "org",
+      sourceType:   "WEB"
     });
 
     if (orgDomain) usedDomains.add(orgDomain);
@@ -643,7 +649,9 @@ function dedupePlaces(list) {
   for (const p of list) {
     const key = p.placeId
       ? p.placeId
-      : ((p.facilityName || '') + (p.address || '').slice(0, 10));
+      : p.phone
+        ? p.phone
+        : (p.facilityName || '') + (p.address || '').slice(0, 10);
     if (key && !seen.has(key)) {
       seen.set(key, p);
     } else if (!key) {
@@ -652,6 +660,7 @@ function dedupePlaces(list) {
   }
   return Array.from(seen.values());
 }
+// TODO: 将来的に source / sourceType は sourceType に統一予定
 
 // ---- Main ----
 async function collectData() {
@@ -771,9 +780,10 @@ async function collectData() {
 function downloadExcel() {
   if (collectedData.length === 0) { alert("ダウンロードするデータがありません"); return; }
 
-  const headers = ["No.", "都道府県", "市区町村", "施設名", "住所", "電話番号", "GoogleマップURL", "HP有無", "HPのURL", "評価", "口コミ件数", "緯度", "経度", "営業状態"];
+  const headers = ["No.", "place_id", "都道府県", "市区町村", "施設名", "住所", "電話番号", "GoogleマップURL", "HP有無", "HPのURL", "評価", "口コミ件数", "緯度", "経度", "営業状態", "source_type"];
   const rows = collectedData.map((row, i) => [
     i + 1,
+    row.placeId || "",
     row.prefecture || "",
     row.municipality || "",
     row.facilityName || "",
@@ -786,7 +796,8 @@ function downloadExcel() {
     row.reviews ?? "",
     row.lat ?? "",
     row.lng ?? "",
-    row.openState || ""
+    row.openState || "",
+    row.sourceType || ""
   ]);
 
   const wsData = [headers, ...rows];
@@ -795,6 +806,7 @@ function downloadExcel() {
   // 列幅設定
   ws["!cols"] = [
     { wch: 6 },   // No.
+    { wch: 32 },  // place_id
     { wch: 10 },  // 都道府県
     { wch: 14 },  // 市区町村
     { wch: 28 },  // 施設名
@@ -807,7 +819,8 @@ function downloadExcel() {
     { wch: 10 },  // 口コミ件数
     { wch: 12 },  // 緯度
     { wch: 12 },  // 経度
-    { wch: 14 }   // 営業状態
+    { wch: 14 },  // 営業状態
+    { wch: 12 }   // source_type
   ];
 
   const wb = XLSX.utils.book_new();
