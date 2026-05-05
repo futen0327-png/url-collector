@@ -515,9 +515,26 @@ function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+// ---- Prefecture → SerpApi location ----
+function prefectureToLocation(pref) {
+  const map = {
+    '奈良県': 'Nara, Japan',      '奈良': 'Nara, Japan',
+    '大阪府': 'Osaka, Japan',     '大阪': 'Osaka, Japan',
+    '京都府': 'Kyoto, Japan',     '京都': 'Kyoto, Japan',
+    '兵庫県': 'Hyogo, Japan',     '兵庫': 'Hyogo, Japan',
+    '滋賀県': 'Shiga, Japan',     '滋賀': 'Shiga, Japan',
+    '和歌山県': 'Wakayama, Japan','和歌山': 'Wakayama, Japan',
+    '三重県': 'Mie, Japan',       '三重': 'Mie, Japan',
+    '愛知県': 'Aichi, Japan',     '愛知': 'Aichi, Japan',
+    '東京都': 'Tokyo, Japan',     '東京': 'Tokyo, Japan',
+  };
+  return map[pref] || '';
+}
+
 // ---- SerpApi call ----
-async function searchSerpApi(query, apiKey) {
-  const url = `https://url-collector-iota.vercel.app/api/search?api_key=${encodeURIComponent(apiKey)}&q=${encodeURIComponent(query)}`;
+async function searchSerpApi(query, apiKey, location = '') {
+  const locationParam = location ? `&location=${encodeURIComponent(location)}` : '';
+  const url = `https://url-collector-iota.vercel.app/api/search?api_key=${encodeURIComponent(apiKey)}&q=${encodeURIComponent(query)}${locationParam}`;
 
   const response = await fetch(url);
 
@@ -533,30 +550,11 @@ async function searchSerpApi(query, apiKey) {
 function parseResponse(municipality, data, prefecture = "") {
   const results = [];
 
-  // ① knowledge_graph
-  const kg = data.knowledge_graph;
-  if (kg && kg.title) {
-    results.push({
-      prefecture,
-      municipality,
-      facilityName: kg.title || "",
-      address: kg.address || "",
-      phone: kg.phone || "",
-      url: kg.website || "",
-      mapUrl: "",
-      rating: "",
-      reviews: "",
-      lat: "",
-      lng: "",
-      openState: "",
-      source: "kg"
-    });
-  }
-
-  // ② local_results
+  // ── ① local_results を最優先で取得 ──────────────────────────
   const locals = Array.isArray(data.local_results)
     ? data.local_results
     : (data.local_results?.places || []);
+
   locals.forEach(item => {
     const mapUrl = item.links?.directions
       || (item.place_id ? `https://www.google.com/maps/place/?q=place_id:${item.place_id}` : "");
@@ -564,42 +562,83 @@ function parseResponse(municipality, data, prefecture = "") {
       prefecture,
       municipality,
       facilityName: item.title || "",
-      address: item.address || "",
-      phone: item.phone || "",
-      url: item.links?.website || "",
+      address:      item.address || "",
+      phone:        item.phone || "",
+      url:          item.links?.website || "",
       mapUrl,
-      rating: item.rating ?? "",
-      reviews: item.reviews ?? "",
-      lat: item.gps_coordinates?.latitude ?? "",
-      lng: item.gps_coordinates?.longitude ?? "",
-      openState: item.open_state || "",
-      source: "local"
+      rating:       item.rating ?? "",
+      reviews:      item.reviews ?? "",
+      lat:          item.gps_coordinates?.latitude ?? "",
+      lng:          item.gps_coordinates?.longitude ?? "",
+      openState:    item.open_state || "",
+      source:       "local"
     });
   });
 
-  // ③ organic_results
-  const organics = Array.isArray(data.organic_results)
-    ? data.organic_results
-    : [];
-  organics.forEach(item => {
-    results.push({
-      prefecture,
-      municipality,
-      facilityName: item.title || "",
-      address: extractAddress(item.snippet || ""),
-      phone: extractPhone(item.snippet || ""),
-      url: item.link || "",
-      mapUrl: "",
-      rating: "",
-      reviews: "",
-      lat: "",
-      lng: "",
-      openState: "",
-      source: "org"
+  // ── ② knowledge_graph をフォールバック①として追加 ──────────
+  // local_resultsが0件のときのみ使用
+  if (results.length === 0) {
+    const kg = data.knowledge_graph;
+    if (kg && kg.title) {
+      results.push({
+        prefecture,
+        municipality,
+        facilityName: kg.title || "",
+        address:      kg.address || "",
+        phone:        kg.phone || "",
+        url:          kg.website || "",
+        mapUrl:       "",
+        rating:       "",
+        reviews:      "",
+        lat:          "",
+        lng:          "",
+        openState:    "",
+        source:       "kg"
+      });
+    }
+  }
+
+  // ── ③ organic_results をフォールバック②として追加 ──────────
+  // local_results も knowledge_graph も0件のときのみ使用
+  if (results.length === 0) {
+    const organics = Array.isArray(data.organic_results)
+      ? data.organic_results
+      : [];
+    organics.forEach(item => {
+      results.push({
+        prefecture,
+        municipality,
+        facilityName: item.title || "",
+        address:      extractAddress(item.snippet || ""),
+        phone:        extractPhone(item.snippet || ""),
+        url:          item.link || "",
+        mapUrl:       "",
+        rating:       "",
+        reviews:      "",
+        lat:          "",
+        lng:          "",
+        openState:    "",
+        source:       "org"
+      });
     });
-  });
+  }
 
   return results;
+}
+
+function dedupePlaces(list) {
+  const seen = new Map();
+  for (const p of list) {
+    const key = p.placeId
+      ? p.placeId
+      : ((p.facilityName || '') + (p.address || '').slice(0, 10));
+    if (key && !seen.has(key)) {
+      seen.set(key, p);
+    } else if (!key) {
+      seen.set(Symbol(), p);
+    }
+  }
+  return Array.from(seen.values());
 }
 
 // ---- Main ----
@@ -641,8 +680,11 @@ async function collectData() {
     const query = template.replace(/\{市区町村\}/g, prefStr + muni);
 
     try {
-      const data = await searchSerpApi(query, apiKey);
-      const entries = parseResponse(muni, data, prefecture);
+      // prefectureを location パラメータとして渡す（例："奈良県" → "Nara, Japan"）
+      const locationStr = prefectureToLocation(prefecture);
+      const data = await searchSerpApi(query, apiKey, locationStr);
+      const rawEntries = parseResponse(muni, data, prefecture);
+      const entries    = dedupePlaces(rawEntries);
 
       if (entries.length === 0) {
         log(`  → 結果なし`, "warn");
@@ -666,7 +708,10 @@ async function collectData() {
         collectedData.push(emptyEntry);
         addRow(emptyEntry);
       } else {
-        log(`  → ${entries.length}件取得`, "ok");
+        const localCount = entries.filter(e => e.source === 'local').length;
+        const kgCount    = entries.filter(e => e.source === 'kg').length;
+        const orgCount   = entries.filter(e => e.source === 'org').length;
+        log(`  → ${entries.length}件取得（local:${localCount} kg:${kgCount} organic:${orgCount}）`, "ok");
         entries.forEach(entry => {
           entry.no = collectedData.length + 1;
           collectedData.push(entry);
