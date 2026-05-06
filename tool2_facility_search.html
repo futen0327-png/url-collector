@@ -488,6 +488,19 @@ function getLocals(data) {
   return locals.filter(item => item && (item.title || item.place_id));
 }
 
+function getOrganics(data) {
+  const organics = data.organic_results || [];
+  return organics.filter(item => item && item.title).map(item => ({
+    title:    item.title || '',
+    address:  '',
+    phone:    '',
+    place_id: '',
+    links:    { website: item.link || '', directions: '' },
+    reviews:  '',
+    rating:   '',
+  }));
+}
+
 function extractCandidateRow(facility, item, score, judgment, searchMethod) {
   const mapUrl = item.links?.directions
     || (item.place_id ? `https://www.google.com/maps/place/?q=place_id:${item.place_id}` : '');
@@ -563,17 +576,14 @@ async function startProcessing() {
         const data   = await serpSearch(fac.phone);
         const locals = getLocals(data);
 
-        if (locals.length > 0) {
-          // Take up to 3, all marked 高確度
-          const hits = locals.slice(0, 3);
-          for (const item of hits) {
-            if (!item.links?.directions && !item.place_id) continue;
-            candidates.push(extractCandidateRow(fac, item, '-', '高確度', '電話'));
-          }
-          if (candidates.length > 0) {
-            step1Hits++;
-            log(`  → STEP1ヒット ${candidates.length}件`, 'log-ok');
-          }
+        let step1Items = locals.length > 0 ? locals : getOrganics(data);
+        const hits = step1Items.slice(0, 3);
+        for (const item of hits) {
+          candidates.push(extractCandidateRow(fac, item, '-', '高確度', '電話'));
+        }
+        if (candidates.length > 0) {
+          step1Hits++;
+          log(`  → STEP1ヒット ${candidates.length}件${locals.length === 0 ? '（organic）' : ''}`, 'log-ok');
         }
       } catch (err) {
         log(`  → STEP1エラー: ${err.message.slice(0, 60)}`, 'log-warn');
@@ -588,12 +598,12 @@ async function startProcessing() {
         log(`[${i+1}/${total}] STEP2 住所検索: ${fac.addr}`, 'log-info');
         const data   = await serpSearch(fac.addr);
         const locals = getLocals(data);
-        const top3   = locals.slice(0, 3);
+        const step2Items = locals.length > 0 ? locals : getOrganics(data);
+        const top3 = step2Items.slice(0, 3);
 
         for (const item of top3) {
           const score    = scoreCandidate(fac, item);
           const judgment = scoreToJudgment(score);
-          if (!item.links?.directions && !item.place_id) continue;
           candidates.push(extractCandidateRow(fac, item, score, judgment, '住所'));
         }
         log(`  → STEP2結果: ${candidates.length}件`, candidates.length > 0 ? 'log-ok' : 'log-warn');
