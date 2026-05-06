@@ -1,0 +1,690 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>さんぱいGO 施設情報収集ツール</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'Meiryo', 'Yu Gothic', 'Hiragino Kaku Gothic ProN', sans-serif;
+  background: #f0f2f8;
+  color: #222;
+  min-height: 100vh;
+}
+
+.header { background: #1a237e; color: #fff; padding: 16px 24px; }
+.header h1 { font-size: 18px; font-weight: bold; }
+.header p  { font-size: 12px; color: #9fa8da; margin-top: 4px; }
+
+.main { max-width: 900px; margin: 0 auto; padding: 24px; }
+.section { margin-bottom: 24px; }
+
+/* Card */
+.card {
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 2px 8px rgba(0,0,0,.07);
+  padding: 20px 24px;
+}
+.card-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #7986cb;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  margin-bottom: 14px;
+  border-bottom: 1px solid #e8eaf6;
+  padding-bottom: 8px;
+}
+
+/* API key */
+.field-row { display: flex; gap: 10px; align-items: flex-end; }
+.field-row .field { flex: 1; }
+label { display: block; font-size: 13px; font-weight: 600; color: #444; margin-bottom: 5px; }
+input[type="password"], input[type="text"] {
+  width: 100%;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 14px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color .2s;
+}
+input:focus { border-color: #3949ab; box-shadow: 0 0 0 3px rgba(57,73,171,.12); }
+.btn-sm {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  background: #5c6bc0;
+  color: #fff;
+  white-space: nowrap;
+  transition: background .15s;
+}
+.btn-sm:hover { background: #3949ab; }
+.badge-saved {
+  display: inline-block;
+  background: #e8f5e9;
+  color: #2e7d32;
+  border: 1px solid #c8e6c9;
+  border-radius: 12px;
+  padding: 2px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  margin-left: 8px;
+  vertical-align: middle;
+}
+
+/* Upload */
+.upload-area {
+  border: 2px dashed #9fa8da;
+  border-radius: 10px;
+  padding: 36px 20px;
+  text-align: center;
+  background: #fff;
+  cursor: pointer;
+  transition: border-color .2s, background .2s;
+  user-select: none;
+}
+.upload-area.drag-over { border-color: #1a237e; background: #e8eaf6; }
+.upload-area.loaded    { border-color: #3f51b5; border-style: solid; background: #f0f0ff; }
+.upload-icon { font-size: 34px; margin-bottom: 10px; color: #9fa8da; }
+.upload-text { font-size: 14px; color: #555; margin-bottom: 6px; }
+.upload-sub  { font-size: 12px; color: #aaa; }
+.upload-status { font-size: 13px; font-weight: bold; color: #3949ab; margin-top: 10px; }
+input[type=file] { display: none; }
+
+/* Run button */
+.run-wrap { text-align: center; }
+.run-btn {
+  padding: 13px 64px;
+  background: #1a237e;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 16px;
+  font-weight: bold;
+  cursor: pointer;
+  letter-spacing: .05em;
+  transition: background .15s;
+}
+.run-btn:disabled { background: #bdbdbd; cursor: not-allowed; }
+.run-btn:not(:disabled):hover { background: #283593; }
+
+/* Progress */
+.progress-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: #666;
+  margin-bottom: 6px;
+}
+.progress-bar-bg {
+  background: #e8eaf6;
+  border-radius: 6px;
+  height: 10px;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+.progress-bar-fill {
+  background: linear-gradient(90deg, #1a237e, #5c6bc0);
+  height: 100%;
+  border-radius: 6px;
+  transition: width .3s ease;
+  width: 0%;
+}
+.step-info { font-size: 12px; color: #5c6bc0; margin-bottom: 6px; min-height: 16px; }
+.current-item { font-size: 11px; color: #888; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 8px; min-height: 16px; }
+.log-area {
+  background: #1e1e2e;
+  color: #cdd6f4;
+  border-radius: 6px;
+  padding: 10px 14px;
+  font-family: "Consolas", "Courier New", monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  height: 180px;
+  overflow-y: auto;
+}
+.log-ok   { color: #a6e3a1; }
+.log-warn { color: #f9e2af; }
+.log-err  { color: #f38ba8; }
+.log-info { color: #89b4fa; }
+
+/* Summary */
+.summary-row { display: flex; gap: 12px; flex-wrap: wrap; }
+.summary-card {
+  flex: 1;
+  min-width: 90px;
+  background: #fff;
+  border-radius: 8px;
+  padding: 14px 10px;
+  text-align: center;
+  border-top: 4px solid #ccc;
+}
+.summary-card.c-high { border-top-color: #4caf50; }
+.summary-card.c-semi { border-top-color: #2196f3; }
+.summary-card.c-ref  { border-top-color: #ff9800; }
+.summary-card.c-skip { border-top-color: #9e9e9e; }
+.s-num   { font-size: 30px; font-weight: bold; line-height: 1.2; }
+.s-label { font-size: 11px; color: #666; margin-top: 4px; }
+.c-high .s-num { color: #388e3c; }
+.c-semi .s-num { color: #1565c0; }
+.c-ref  .s-num { color: #e65100; }
+.c-skip .s-num { color: #757575; }
+
+/* Download */
+.dl-wrap { text-align: center; }
+.dl-btn {
+  padding: 12px 48px;
+  background: #1565c0;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: background .15s;
+}
+.dl-btn:hover { background: #1976d2; }
+
+.hidden { display: none !important; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>さんぱいGO 施設情報収集ツール</h1>
+  <p>行政リストCSVを入力として、SerpApiでGoogleマップ情報を収集し候補リストを出力</p>
+</div>
+
+<div class="main">
+
+  <!-- ① APIキー -->
+  <div class="section">
+    <div class="card">
+      <div class="card-title">SerpApi 設定</div>
+      <div class="field-row">
+        <div class="field">
+          <label for="apiKeyInput">
+            APIキー
+            <span id="savedBadge" class="badge-saved hidden">✓ 保存済み</span>
+          </label>
+          <input type="password" id="apiKeyInput" placeholder="your_serpapi_key_here" autocomplete="off">
+        </div>
+        <button class="btn-sm" onclick="saveApiKey()">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ② CSVアップロード -->
+  <div class="section">
+    <div class="upload-area" id="uploadArea"
+         onclick="document.getElementById('fileInput').click()"
+         ondragover="onDragOver(event)"
+         ondragleave="onDragLeave(event)"
+         ondrop="onDrop(event)">
+      <div class="upload-icon">&#128196;</div>
+      <div class="upload-text">CSVファイルをドラッグ＆ドロップ、またはクリックして選択</div>
+      <div class="upload-sub">列：施設名 / 住所 / 電話番号（ヘッダー名で判定）</div>
+      <div class="upload-status hidden" id="uploadStatus"></div>
+    </div>
+    <input type="file" id="fileInput" accept=".csv,.xlsx,.xls">
+  </div>
+
+  <!-- ③ 処理開始 -->
+  <div class="section run-wrap">
+    <button class="run-btn" id="runBtn" disabled onclick="startProcessing()">収集開始</button>
+  </div>
+
+  <!-- ④ 進捗 -->
+  <div class="section hidden" id="progressSection">
+    <div class="card">
+      <div class="progress-label">
+        <span id="progressText">0 / 0</span>
+        <span id="progressPct">0%</span>
+      </div>
+      <div class="progress-bar-bg">
+        <div class="progress-bar-fill" id="progressBar"></div>
+      </div>
+      <div class="step-info"   id="stepInfo"></div>
+      <div class="current-item" id="currentItem"></div>
+      <div class="log-area"    id="logArea"></div>
+    </div>
+  </div>
+
+  <!-- ⑤ サマリー -->
+  <div class="section hidden" id="summarySection">
+    <div class="summary-row">
+      <div class="summary-card c-high">
+        <div class="s-num" id="numHigh">0</div>
+        <div class="s-label">高確度</div>
+      </div>
+      <div class="summary-card c-semi">
+        <div class="s-num" id="numSemi">0</div>
+        <div class="s-label">準候補</div>
+      </div>
+      <div class="summary-card c-ref">
+        <div class="s-num" id="numRef">0</div>
+        <div class="s-label">参考</div>
+      </div>
+      <div class="summary-card c-skip">
+        <div class="s-num" id="numSkip">0</div>
+        <div class="s-label">スキップ</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ⑥ ダウンロード -->
+  <div class="section hidden dl-wrap" id="downloadSection">
+    <button class="dl-btn" onclick="downloadCsv()">候補リストCSVをダウンロード</button>
+  </div>
+
+</div>
+
+<script>
+'use strict';
+
+const PROXY_URL = 'https://url-collector-iota.vercel.app/api/search';
+const INDUSTRY_WORDS = ['産廃', 'リサイクル', '処分', '廃棄物'];
+
+// ─── State ────────────────────────────────────────────────────────────────────
+
+let facilities  = [];
+let outputRows  = [];
+let isRunning   = false;
+
+// ─── Init ─────────────────────────────────────────────────────────────────────
+
+(function init() {
+  const key = localStorage.getItem('tool2_serpapi_key');
+  if (key) {
+    document.getElementById('apiKeyInput').value = key;
+    document.getElementById('savedBadge').classList.remove('hidden');
+  }
+})();
+
+function saveApiKey() {
+  const v = document.getElementById('apiKeyInput').value.trim();
+  if (!v) { alert('APIキーを入力してください'); return; }
+  localStorage.setItem('tool2_serpapi_key', v);
+  document.getElementById('savedBadge').classList.remove('hidden');
+}
+
+// ─── Drag & drop ──────────────────────────────────────────────────────────────
+
+function onDragOver(e) {
+  e.preventDefault();
+  document.getElementById('uploadArea').classList.add('drag-over');
+}
+function onDragLeave() {
+  document.getElementById('uploadArea').classList.remove('drag-over');
+}
+function onDrop(e) {
+  e.preventDefault();
+  document.getElementById('uploadArea').classList.remove('drag-over');
+  if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
+}
+
+document.getElementById('fileInput').addEventListener('change', e => {
+  if (e.target.files[0]) handleFile(e.target.files[0]);
+});
+
+// ─── File reading & parsing ───────────────────────────────────────────────────
+
+function handleFile(file) {
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const wb  = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
+      const ws  = wb.Sheets[wb.SheetNames[0]];
+      const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+      if (!raw || raw.length < 2) throw new Error('データが空です');
+
+      const headers = raw[0].map(h => String(h ?? '').trim());
+      const nameIdx  = findColIdx(headers, ['施設名', '名称', '事業所名']);
+      const addrIdx  = findColIdx(headers, ['住所', '所在地', '住所（番地まで）']);
+      const phoneIdx = findColIdx(headers, ['電話番号', 'TEL', '電話']);
+
+      if (nameIdx < 0)  throw new Error('"施設名" 列が見つかりません');
+      if (addrIdx < 0)  throw new Error('"住所" 列が見つかりません');
+
+      const dataRows = raw.slice(1).filter(r => r.some(c => c !== ''));
+      facilities = dataRows.map(row => ({
+        name:  String(row[nameIdx]  ?? '').trim(),
+        addr:  String(row[addrIdx]  ?? '').trim(),
+        phone: phoneIdx >= 0 ? String(row[phoneIdx] ?? '').trim() : '',
+      })).filter(f => f.name || f.addr);
+
+      const st = document.getElementById('uploadStatus');
+      st.textContent = `${facilities.length}件読み込み完了`;
+      st.classList.remove('hidden');
+      document.getElementById('uploadArea').classList.add('loaded');
+      document.getElementById('runBtn').disabled = (facilities.length === 0);
+      outputRows = [];
+    } catch (err) {
+      alert('ファイル読み込みエラー: ' + err.message);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function findColIdx(headers, candidates) {
+  for (const c of candidates) {
+    const i = headers.findIndex(h => h.includes(c));
+    if (i >= 0) return i;
+  }
+  return -1;
+}
+
+// ─── Normalization helpers ────────────────────────────────────────────────────
+
+function normalizePhone(p) {
+  return String(p || '')
+    .replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0))
+    .replace(/[^\d]/g, '');
+}
+
+function normalizeAddr(a) {
+  return String(a || '')
+    .replace(/[　\s]/g, '')
+    .replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0))
+    .replace(/[丁目番地号]/g, '-')
+    .replace(/[ー－−—\-]+/g, '-');
+}
+
+function normalizeName(n) {
+  return String(n || '')
+    .replace(/株式会社|㈱|有限会社|㈲|合同会社|（株）|（有）|\(株\)|\(有\)/g, '')
+    .replace(/[\s　]/g, '');
+}
+
+function extractCityLevel(addr) {
+  const m = normalizeAddr(addr).match(/^.{2,6}[都道府県].{2,8}[市区町村]/);
+  return m ? m[0] : '';
+}
+
+// ─── Scoring ──────────────────────────────────────────────────────────────────
+
+function scoreCandidate(facility, cand) {
+  let score = 0;
+
+  // Phone exact match +50
+  const adminPhone = normalizePhone(facility.phone);
+  const candPhone  = normalizePhone(cand.phone);
+  if (adminPhone && candPhone && adminPhone === candPhone) {
+    score += 50;
+  }
+
+  // Address lot-level match +30, city-level match +15
+  const adminAddrN = normalizeAddr(facility.addr);
+  const candAddrN  = normalizeAddr(cand.address);
+  if (adminAddrN.length >= 8 && candAddrN.length >= 8) {
+    const checkLen = Math.min(adminAddrN.length, candAddrN.length, 16);
+    if (adminAddrN.slice(0, checkLen) === candAddrN.slice(0, checkLen)) {
+      score += 30;
+    } else {
+      const cityA = extractCityLevel(facility.addr);
+      const cityB = extractCityLevel(cand.address);
+      if (cityA && cityB && cityA === cityB) score += 15;
+    }
+  }
+
+  // Name partial match +20
+  const adminName = normalizeName(facility.name);
+  const candName  = normalizeName(cand.title || '');
+  if (adminName.length >= 3 && candName.length >= 3) {
+    if (adminName.includes(candName) || candName.includes(adminName)) {
+      score += 20;
+    }
+  }
+
+  // Industry keyword in candidate name +10
+  if (INDUSTRY_WORDS.some(w => (cand.title || '').includes(w))) {
+    score += 10;
+  }
+
+  return score;
+}
+
+function scoreToJudgment(score) {
+  if (score >= 70) return '高確度';
+  if (score >= 40) return '準候補';
+  return '参考';
+}
+
+// ─── SerpApi call ─────────────────────────────────────────────────────────────
+
+async function serpSearch(query) {
+  const apiKey = document.getElementById('apiKeyInput').value.trim();
+  if (!apiKey) throw new Error('APIキーが未設定です');
+
+  const url = PROXY_URL
+    + `?api_key=${encodeURIComponent(apiKey)}`
+    + `&q=${encodeURIComponent(query)}`
+    + `&location=${encodeURIComponent('日本')}`;
+
+  const controller = new AbortController();
+  const tid = setTimeout(() => controller.abort(), 10000);
+  try {
+    const res = await fetch(url, { signal: controller.signal });
+    clearTimeout(tid);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.json();
+  } catch (err) {
+    clearTimeout(tid);
+    throw err;
+  }
+}
+
+function getLocals(data) {
+  let locals = data.local_results || [];
+  if (!Array.isArray(locals)) locals = Object.values(locals);
+  return locals.filter(item => item && (item.title || item.place_id));
+}
+
+function extractCandidateRow(facility, item, score, judgment, searchMethod) {
+  const mapUrl = item.links?.directions
+    || (item.place_id ? `https://www.google.com/maps/place/?q=place_id:${item.place_id}` : '');
+  return {
+    adminName:    facility.name,
+    adminAddr:    facility.addr,
+    adminPhone:   facility.phone,
+    candName:     item.title     || '',
+    candAddr:     item.address   || '',
+    candPhone:    item.phone     || '',
+    mapUrl,
+    placeId:      item.place_id  || '',
+    website:      item.links?.website || '',
+    reviews:      item.reviews   ?? '',
+    rating:       item.rating    ?? '',
+    score,
+    judgment,
+    searchMethod,
+    memo: '',
+  };
+}
+
+// ─── Log ──────────────────────────────────────────────────────────────────────
+
+function log(msg, type = 'log-info') {
+  const area = document.getElementById('logArea');
+  const ts   = new Date().toLocaleTimeString('ja-JP');
+  const span = document.createElement('span');
+  span.className  = type;
+  span.textContent = `[${ts}] ${msg}\n`;
+  area.appendChild(span);
+  area.scrollTop = area.scrollHeight;
+}
+
+// ─── Main processing ──────────────────────────────────────────────────────────
+
+async function startProcessing() {
+  if (isRunning) return;
+  isRunning  = true;
+  outputRows = [];
+
+  document.getElementById('runBtn').disabled = true;
+  document.getElementById('progressSection').classList.remove('hidden');
+  document.getElementById('summarySection').classList.remove('hidden');
+  document.getElementById('downloadSection').classList.add('hidden');
+  document.getElementById('logArea').innerHTML = '';
+
+  const total = facilities.length;
+  let step1Hits = 0, step2Count = 0;
+  let numHigh = 0, numSemi = 0, numRef = 0, numSkip = 0;
+
+  log(`収集開始: ${total}件の施設を処理します`, 'log-info');
+
+  for (let i = 0; i < total; i++) {
+    const fac = facilities[i];
+
+    // Progress
+    const pct = Math.round(((i) / total) * 100);
+    document.getElementById('progressText').textContent = `${i + 1} / ${total}`;
+    document.getElementById('progressPct').textContent  = `${pct}%`;
+    document.getElementById('progressBar').style.width  = `${pct}%`;
+    document.getElementById('stepInfo').textContent     =
+      `STEP1ヒット: ${step1Hits}件 / STEP2処理: ${step2Count}件`;
+    document.getElementById('currentItem').textContent  =
+      `処理中: ${fac.name}（${fac.addr}）`;
+
+    const candidates = [];
+
+    // ── STEP1: 電話番号検索 ────────────────────────────────────────────────
+    if (fac.phone) {
+      try {
+        log(`[${i+1}/${total}] STEP1 電話番号検索: ${fac.phone}`, 'log-info');
+        const data   = await serpSearch(fac.phone);
+        const locals = getLocals(data);
+
+        if (locals.length > 0) {
+          // Take up to 3, all marked 高確度
+          const hits = locals.slice(0, 3);
+          for (const item of hits) {
+            if (!item.links?.directions && !item.place_id) continue;
+            candidates.push(extractCandidateRow(fac, item, '-', '高確度', '電話'));
+          }
+          if (candidates.length > 0) {
+            step1Hits++;
+            log(`  → STEP1ヒット ${candidates.length}件`, 'log-ok');
+          }
+        }
+      } catch (err) {
+        log(`  → STEP1エラー: ${err.message.slice(0, 60)}`, 'log-warn');
+      }
+      await sleep(500);
+    }
+
+    // ── STEP2: 住所検索（STEP1でヒットしなかった場合のみ） ────────────────
+    if (candidates.length === 0 && fac.addr) {
+      step2Count++;
+      try {
+        log(`[${i+1}/${total}] STEP2 住所検索: ${fac.addr}`, 'log-info');
+        const data   = await serpSearch(fac.addr);
+        const locals = getLocals(data);
+        const top3   = locals.slice(0, 3);
+
+        for (const item of top3) {
+          const score    = scoreCandidate(fac, item);
+          const judgment = scoreToJudgment(score);
+          if (!item.links?.directions && !item.place_id) continue;
+          candidates.push(extractCandidateRow(fac, item, score, judgment, '住所'));
+        }
+        log(`  → STEP2結果: ${candidates.length}件`, candidates.length > 0 ? 'log-ok' : 'log-warn');
+      } catch (err) {
+        log(`  → STEP2エラー: ${err.message.slice(0, 60)}`, 'log-warn');
+      }
+      await sleep(500);
+    }
+
+    // ── 結果を集計 ─────────────────────────────────────────────────────────
+    if (candidates.length === 0) {
+      numSkip++;
+      outputRows.push({
+        adminName: fac.name, adminAddr: fac.addr, adminPhone: fac.phone,
+        candName: '', candAddr: '', candPhone: '',
+        mapUrl: '', placeId: '', website: '', reviews: '', rating: '',
+        score: '-', judgment: 'スキップ', searchMethod: '-', memo: '',
+      });
+    } else {
+      for (const c of candidates) {
+        if      (c.judgment === '高確度') numHigh++;
+        else if (c.judgment === '準候補') numSemi++;
+        else if (c.judgment === '参考')   numRef++;
+        outputRows.push(c);
+      }
+    }
+
+    // Update summary UI
+    document.getElementById('numHigh').textContent = numHigh;
+    document.getElementById('numSemi').textContent = numSemi;
+    document.getElementById('numRef').textContent  = numRef;
+    document.getElementById('numSkip').textContent = numSkip;
+  }
+
+  // Complete
+  const finPct = 100;
+  document.getElementById('progressText').textContent = `${total} / ${total}`;
+  document.getElementById('progressPct').textContent  = `${finPct}%`;
+  document.getElementById('progressBar').style.width  = `${finPct}%`;
+  document.getElementById('stepInfo').textContent     =
+    `STEP1ヒット: ${step1Hits}件 / STEP2処理: ${step2Count}件`;
+  document.getElementById('currentItem').textContent  = '完了';
+  log(`収集完了: 高確度${numHigh} / 準候補${numSemi} / 参考${numRef} / スキップ${numSkip} | 出力${outputRows.length}行`, 'log-ok');
+
+  document.getElementById('downloadSection').classList.remove('hidden');
+  document.getElementById('runBtn').disabled = false;
+  isRunning = false;
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+// ─── CSV download ─────────────────────────────────────────────────────────────
+
+function escCsv(v) {
+  const s = String(v ?? '');
+  if (s.includes(',') || s.includes('"') || s.includes('\n') || s.includes('\r')) {
+    return '"' + s.replace(/"/g, '""') + '"';
+  }
+  return s;
+}
+
+function downloadCsv() {
+  if (outputRows.length === 0) { alert('ダウンロードするデータがありません'); return; }
+
+  const headers = [
+    '元施設名', '元住所', '元電話番号',
+    '候補施設名', '候補住所', '候補電話番号',
+    'GoogleマップURL', 'place_id', 'WebサイトURL',
+    '口コミ数', '評価', '一致スコア', '判定', '検索方法', '備考',
+  ];
+
+  const dataRows = outputRows.map(r => [
+    r.adminName, r.adminAddr, r.adminPhone,
+    r.candName,  r.candAddr,  r.candPhone,
+    r.mapUrl,    r.placeId,   r.website,
+    r.reviews,   r.rating,    r.score,
+    r.judgment,  r.searchMethod, r.memo,
+  ]);
+
+  const csv  = [headers, ...dataRows].map(row => row.map(escCsv).join(',')).join('\r\n');
+  const bom  = '﻿';
+  const blob = new Blob([bom + csv], { type: 'text/csv;charset=utf-8;' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = `施設候補リスト_${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+</script>
+</body>
+</html>
