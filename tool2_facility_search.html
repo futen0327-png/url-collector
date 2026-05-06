@@ -238,8 +238,10 @@ input[type=file] { display: none; }
   </div>
 
   <!-- ③ 処理開始 -->
-  <div class="section run-wrap">
-    <button class="run-btn" id="runBtn" disabled onclick="startProcessing()">収集開始</button>
+  <div class="section run-wrap" style="display:flex;gap:12px;justify-content:center;align-items:center;">
+    <button class="run-btn" id="runBtn" disabled onclick="startProcessing(false)">収集開始</button>
+    <button class="run-btn" id="testBtn" disabled onclick="startProcessing(true)"
+            style="background:#6a1b9a;padding:13px 28px;font-size:13px;">テスト1件</button>
   </div>
 
   <!-- ④ 進捗 -->
@@ -365,7 +367,8 @@ function handleFile(file) {
       st.textContent = `${facilities.length}件読み込み完了`;
       st.classList.remove('hidden');
       document.getElementById('uploadArea').classList.add('loaded');
-      document.getElementById('runBtn').disabled = (facilities.length === 0);
+      document.getElementById('runBtn').disabled  = (facilities.length === 0);
+      document.getElementById('testBtn').disabled = (facilities.length === 0);
       outputRows = [];
     } catch (err) {
       alert('ファイル読み込みエラー: ' + err.message);
@@ -469,13 +472,20 @@ async function serpSearch(query) {
     + `&q=${encodeURIComponent(query)}`
     + `&location=${encodeURIComponent('日本')}`;
 
+  console.log('[DEBUG] リクエストURL:', url.replace(encodeURIComponent(apiKey), '***API_KEY***'));
+
   const controller = new AbortController();
   const tid = setTimeout(() => controller.abort(), 10000);
   try {
     const res = await fetch(url, { signal: controller.signal });
     clearTimeout(tid);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return await res.json();
+    const data = await res.json();
+    console.log('[DEBUG] レスポンスキー:', Object.keys(data));
+    console.log('[DEBUG] local_results:', JSON.stringify(data.local_results ?? null).slice(0, 500));
+    console.log('[DEBUG] organic_results件数:', (data.organic_results || []).length);
+    if (data.error) throw new Error(`SerpApi: ${data.error}`);
+    return data;
   } catch (err) {
     clearTimeout(tid);
     throw err;
@@ -537,22 +547,23 @@ function log(msg, type = 'log-info') {
 
 // ─── Main processing ──────────────────────────────────────────────────────────
 
-async function startProcessing() {
+async function startProcessing(testMode = false) {
   if (isRunning) return;
   isRunning  = true;
   outputRows = [];
 
-  document.getElementById('runBtn').disabled = true;
+  document.getElementById('runBtn').disabled  = true;
+  document.getElementById('testBtn').disabled = true;
   document.getElementById('progressSection').classList.remove('hidden');
   document.getElementById('summarySection').classList.remove('hidden');
   document.getElementById('downloadSection').classList.add('hidden');
   document.getElementById('logArea').innerHTML = '';
 
-  const total = facilities.length;
+  const total = testMode ? Math.min(1, facilities.length) : facilities.length;
   let step1Hits = 0, step2Count = 0;
   let numHigh = 0, numSemi = 0, numRef = 0, numSkip = 0;
 
-  log(`収集開始: ${total}件の施設を処理します`, 'log-info');
+  log(`収集開始: ${total}件の施設を処理します${testMode ? '（テストモード）' : ''}`, 'log-info');
 
   for (let i = 0; i < total; i++) {
     const fac = facilities[i];
@@ -573,10 +584,12 @@ async function startProcessing() {
     if (fac.phone) {
       try {
         log(`[${i+1}/${total}] STEP1 電話番号検索: ${fac.phone}`, 'log-info');
-        const data   = await serpSearch(fac.phone);
-        const locals = getLocals(data);
+        const data    = await serpSearch(fac.phone);
+        const locals  = getLocals(data);
+        const organics = getOrganics(data);
+        log(`  → STEP1 local:${locals.length}件 organic:${organics.length}件`, 'log-info');
 
-        let step1Items = locals.length > 0 ? locals : getOrganics(data);
+        let step1Items = locals.length > 0 ? locals : organics;
         const hits = step1Items.slice(0, 3);
         for (const item of hits) {
           candidates.push(extractCandidateRow(fac, item, '-', '高確度', '電話'));
@@ -584,9 +597,11 @@ async function startProcessing() {
         if (candidates.length > 0) {
           step1Hits++;
           log(`  → STEP1ヒット ${candidates.length}件${locals.length === 0 ? '（organic）' : ''}`, 'log-ok');
+        } else {
+          log(`  → STEP1: 候補なし`, 'log-warn');
         }
       } catch (err) {
-        log(`  → STEP1エラー: ${err.message.slice(0, 60)}`, 'log-warn');
+        log(`  → STEP1エラー: ${err.message.slice(0, 80)}`, 'log-err');
       }
       await sleep(500);
     }
@@ -596,9 +611,12 @@ async function startProcessing() {
       step2Count++;
       try {
         log(`[${i+1}/${total}] STEP2 住所検索: ${fac.addr}`, 'log-info');
-        const data   = await serpSearch(fac.addr);
-        const locals = getLocals(data);
-        const step2Items = locals.length > 0 ? locals : getOrganics(data);
+        const data     = await serpSearch(fac.addr);
+        const locals   = getLocals(data);
+        const organics = getOrganics(data);
+        log(`  → STEP2 local:${locals.length}件 organic:${organics.length}件`, 'log-info');
+
+        const step2Items = locals.length > 0 ? locals : organics;
         const top3 = step2Items.slice(0, 3);
 
         for (const item of top3) {
@@ -608,7 +626,7 @@ async function startProcessing() {
         }
         log(`  → STEP2結果: ${candidates.length}件`, candidates.length > 0 ? 'log-ok' : 'log-warn');
       } catch (err) {
-        log(`  → STEP2エラー: ${err.message.slice(0, 60)}`, 'log-warn');
+        log(`  → STEP2エラー: ${err.message.slice(0, 80)}`, 'log-err');
       }
       await sleep(500);
     }
@@ -649,7 +667,8 @@ async function startProcessing() {
   log(`収集完了: 高確度${numHigh} / 準候補${numSemi} / 参考${numRef} / スキップ${numSkip} | 出力${outputRows.length}行`, 'log-ok');
 
   document.getElementById('downloadSection').classList.remove('hidden');
-  document.getElementById('runBtn').disabled = false;
+  document.getElementById('runBtn').disabled  = false;
+  document.getElementById('testBtn').disabled = false;
   isRunning = false;
 }
 
