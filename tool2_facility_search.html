@@ -481,6 +481,7 @@ async function serpSearch(query) {
     clearTimeout(tid);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
+    console.log('[DEBUG] レスポンス全体:', JSON.stringify(data));
     console.log('[DEBUG] レスポンスキー:', Object.keys(data));
     console.log('[DEBUG] local_results:', JSON.stringify(data.local_results ?? null).slice(0, 500));
     console.log('[DEBUG] organic_results件数:', (data.organic_results || []).length);
